@@ -49,6 +49,7 @@ async function extractInvoiceData(text) {
 
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
+    temperature: 0,
     messages: [
       {
         role: "system",
@@ -184,6 +185,10 @@ function calculateLineItemsTotal(lineItems) {
   }, 0);
 }
 
+function isCloseEnough(actual, expected, tolerance) {
+  return Math.abs(actual - expected) <= tolerance;
+}
+
 function validateInvoice(data) {
   const requiredFields = [
     "vendor_name",
@@ -228,9 +233,18 @@ function validateInvoice(data) {
     if (validatedData.total_amount !== null) {
       const difference = Math.abs(lineItemsTotal - validatedData.total_amount);
       const tolerance = Math.max(0.01, Math.abs(validatedData.total_amount) * 0.02);
-      if (difference > tolerance) {
+      const subtotalMatchesTotal = isCloseEnough(lineItemsTotal, validatedData.total_amount, tolerance);
+      const subtotalPlusTaxMatchesTotal =
+        validatedData.tax_amount !== null &&
+        isCloseEnough(
+          lineItemsTotal + validatedData.tax_amount,
+          validatedData.total_amount,
+          tolerance
+        );
+
+      if (!subtotalMatchesTotal && !subtotalPlusTaxMatchesTotal && difference > tolerance) {
         errors.push(
-          `Line item total mismatch: line_items=${lineItemsTotal.toFixed(2)}, total_amount=${validatedData.total_amount.toFixed(2)}`
+          `Line item total mismatch: line_items=${lineItemsTotal.toFixed(2)}, tax_amount=${(validatedData.tax_amount ?? 0).toFixed(2)}, total_amount=${validatedData.total_amount.toFixed(2)}`
         );
       }
     }
