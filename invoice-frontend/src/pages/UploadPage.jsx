@@ -33,7 +33,7 @@ function UploadPage({ onUploaded }) {
       onUploaded?.();
     } catch (err) {
       console.error(err);
-      setMessage("Upload failed. Please try again.");
+      setMessage(err.response?.data?.message || "Upload failed. Please try again.");
       setResults([]);
     } finally {
       setIsUploading(false);

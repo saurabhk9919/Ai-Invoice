@@ -19,7 +19,7 @@ function InvoicesPage({ onSelect, refreshToken }) {
       setInvoices(response.data || []);
     } catch (err) {
       console.error(err);
-      setError("Unable to load processed invoices.");
+      setError(err.response?.data?.message || "Unable to load processed invoices.");
     } finally {
       setLoading(false);
     }

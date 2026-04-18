@@ -1,7 +1,9 @@
 import axios from "axios";
 
+const API = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
 const apiClient = axios.create({
-  baseURL: "http://localhost:5000",
+  baseURL: API.replace(/\/$/, ""),
 });
 
 export const uploadInvoices = async (files) => {

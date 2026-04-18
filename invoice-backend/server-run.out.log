@@ -1,0 +1,7 @@
+
+> invoice-backend@1.0.0 start
+> node server.js
+
+◇ injected env (2) from .env // tip: ⌘ override existing { override: true }
+Server running on port 5000
+MongoDB Connected (invoice-ai)
