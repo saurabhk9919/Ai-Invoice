@@ -1,15 +1,43 @@
 import { useState } from "react";
+import axios from "axios";
 
 function UploadPage() {
   const [files, setFiles] = useState([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
 
   const handleFileChange = (e) => {
     setFiles([...e.target.files]);
+    setStatusMessage("");
   };
 
-  const handleUpload = () => {
-    console.log("Files to upload:", files);
-  
+  const handleUpload = async () => {
+    if (files.length === 0) {
+      setStatusMessage("Please select at least one PDF file before uploading.");
+      return;
+    }
+
+    const formData = new FormData();
+
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
+
+    try {
+      setIsUploading(true);
+      setStatusMessage("");
+
+      const res = await axios.post("http://localhost:5000/documents", formData);
+
+      console.log(res.data);
+      setStatusMessage(res.data?.message || "Upload successful.");
+      setFiles([]);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Upload failed. Please try again.");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -25,9 +53,11 @@ function UploadPage() {
 
       <br /><br />
 
-      <button onClick={handleUpload}>
-        Upload
+      <button onClick={handleUpload} disabled={isUploading}>
+        {isUploading ? "Uploading..." : "Upload"}
       </button>
+
+      {statusMessage ? <p>{statusMessage}</p> : null}
 
       <div>
         <h3>Selected Files:</h3>
