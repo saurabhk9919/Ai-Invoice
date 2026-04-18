@@ -5,10 +5,12 @@ function UploadPage() {
   const [files, setFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [results, setResults] = useState([]);
 
   const handleFileChange = (e) => {
     setFiles([...e.target.files]);
     setStatusMessage("");
+    setResults([]);
   };
 
   const handleUpload = async () => {
@@ -31,10 +33,12 @@ function UploadPage() {
 
       console.log(res.data);
       setStatusMessage(res.data?.message || "Upload successful.");
+      setResults(res.data?.results || []);
       setFiles([]);
     } catch (err) {
       console.error(err);
       setStatusMessage("Upload failed. Please try again.");
+      setResults([]);
     } finally {
       setIsUploading(false);
     }
@@ -58,6 +62,20 @@ function UploadPage() {
       </button>
 
       {statusMessage ? <p>{statusMessage}</p> : null}
+
+      {results.length > 0 ? (
+        <div>
+          <h3>Extracted Text Preview</h3>
+          <ul>
+            {results.map((result) => (
+              <li key={result.filename}>
+                <strong>{result.filename}</strong>
+                <div>{result.text}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div>
         <h3>Selected Files:</h3>
