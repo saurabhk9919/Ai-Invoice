@@ -11,6 +11,8 @@ const invoiceSchema = new mongoose.Schema({
 
   validation_errors: [String],
   confidence: Number,
+  extraction_success: Boolean,
+  processing_time_ms: Number,
 
   created_at: {
     type: Date,

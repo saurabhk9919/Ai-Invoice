@@ -28,12 +28,24 @@ function Dashboard({ refreshToken }) {
   const failedValidations = invoices.filter(
     (invoice) => (invoice.validation_errors?.length || 0) > 0
   ).length;
+  const extractionSuccessCount = invoices.filter((invoice) => invoice.extraction_success).length;
+  const extractionSuccessRate = totalInvoices
+    ? ((extractionSuccessCount / totalInvoices) * 100).toFixed(1)
+    : "0.0";
   const averageConfidence = totalInvoices
     ? (
         invoices.reduce((sum, invoice) => sum + (Number(invoice.confidence) || 0), 0) /
         totalInvoices
       ).toFixed(2)
     : "0.00";
+  const averageProcessingTime = totalInvoices
+    ? (
+        invoices.reduce(
+          (sum, invoice) => sum + (Number(invoice.processing_time_ms) || 0),
+          0
+        ) / totalInvoices
+      ).toFixed(0)
+    : "0";
 
   const validationIssues = invoices.filter(
     (invoice) => (invoice.validation_errors?.length || 0) > 0
@@ -70,6 +82,16 @@ function Dashboard({ refreshToken }) {
             <article className="metric-card">
               <span className="metric-label">Failed validations</span>
               <strong className="metric-value">{failedValidations}</strong>
+            </article>
+
+            <article className="metric-card">
+              <span className="metric-label">Avg processing time</span>
+              <strong className="metric-value">{averageProcessingTime} ms</strong>
+            </article>
+
+            <article className="metric-card">
+              <span className="metric-label">Extraction success rate</span>
+              <strong className="metric-value">{extractionSuccessRate}%</strong>
             </article>
           </div>
 

@@ -91,6 +91,87 @@ ${text}
   }
 }
 
+function toNumber(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[^0-9.-]/g, "").trim();
+    if (!cleaned) {
+      return null;
+    }
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function normalizeDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  const ddmmyyyy = /^([0-3]?\d)[/.-]([0-1]?\d)[/.-](\d{4})$/;
+  const match = String(value).trim().match(ddmmyyyy);
+  if (!match) {
+    return null;
+  }
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const normalized = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    normalized.getUTCFullYear() !== year ||
+    normalized.getUTCMonth() !== month - 1 ||
+    normalized.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return normalized.toISOString().slice(0, 10);
+}
+
+function normalizeLineItems(lineItems) {
+  if (!Array.isArray(lineItems)) {
+    return [];
+  }
+
+  return lineItems.map((item) => {
+    const quantity = toNumber(item?.quantity);
+    const unitPrice = toNumber(item?.unit_price);
+    const lineTotal = toNumber(item?.line_total);
+
+    const calculatedLineTotal =
+      lineTotal !== null
+        ? lineTotal
+        : quantity !== null && unitPrice !== null
+          ? Number((quantity * unitPrice).toFixed(2))
+          : null;
+
+    return {
+      description: item?.description || "",
+      quantity,
+      unit_price: unitPrice,
+      line_total: calculatedLineTotal,
+    };
+  });
+}
+
+function calculateLineItemsTotal(lineItems) {
+  return lineItems.reduce((sum, item) => {
+    return sum + (item.line_total ?? 0);
+  }, 0);
+}
+
 function validateInvoice(data) {
   const requiredFields = [
     "vendor_name",
@@ -102,12 +183,23 @@ function validateInvoice(data) {
     "line_items",
   ];
 
-  const validatedData = data && typeof data === "object" ? data : {};
+  const validatedData = data && typeof data === "object" ? { ...data } : {};
   const errors = [];
 
   if (validatedData.error) {
     errors.push(validatedData.error);
   }
+
+  validatedData.total_amount = toNumber(validatedData.total_amount);
+  validatedData.tax_amount = toNumber(validatedData.tax_amount);
+
+  const normalizedDate = normalizeDate(validatedData.invoice_date);
+  if (validatedData.invoice_date && !normalizedDate) {
+    errors.push("Invalid field: invoice_date format");
+  }
+  validatedData.invoice_date = normalizedDate || validatedData.invoice_date || "";
+
+  validatedData.line_items = normalizeLineItems(validatedData.line_items);
 
   for (const field of requiredFields) {
     if (
@@ -119,12 +211,29 @@ function validateInvoice(data) {
     }
   }
 
-  const confidence = Math.max(0, requiredFields.length - errors.length) / requiredFields.length;
+  if (Array.isArray(validatedData.line_items) && validatedData.line_items.length > 0) {
+    const lineItemsTotal = calculateLineItemsTotal(validatedData.line_items);
+    if (validatedData.total_amount !== null) {
+      const difference = Math.abs(lineItemsTotal - validatedData.total_amount);
+      const tolerance = Math.max(0.01, Math.abs(validatedData.total_amount) * 0.02);
+      if (difference > tolerance) {
+        errors.push(
+          `Line item total mismatch: line_items=${lineItemsTotal.toFixed(2)}, total_amount=${validatedData.total_amount.toFixed(2)}`
+        );
+      }
+    }
+  }
+
+  const totalChecks = requiredFields.length + 2;
+  const confidence = Math.max(0, (totalChecks - errors.length) / totalChecks);
+
+  const extractionSuccess = errors.length === 0;
 
   return {
     validatedData,
     errors,
     confidence,
+    extractionSuccess,
   };
 }
 
@@ -140,6 +249,7 @@ app.post("/documents", upload.array("files"), async (req, res) => {
     const results = [];
 
     for (const file of files) {
+      const processingStartedAt = Date.now();
       const dataBuffer = fs.readFileSync(file.path);
 
       const parser = new PDFParse({ data: dataBuffer });
@@ -148,6 +258,7 @@ app.post("/documents", upload.array("files"), async (req, res) => {
       const structuredData = result.data;
       const promptVersion = result.prompt_version;
       const validation = validateInvoice(structuredData);
+      const processingTimeMs = Date.now() - processingStartedAt;
 
       console.log("[DB] Saving invoice:", file.filename);
       const savedInvoice = await Invoice.create({
@@ -157,6 +268,8 @@ app.post("/documents", upload.array("files"), async (req, res) => {
         structured_data: validation.validatedData,
         validation_errors: validation.errors,
         confidence: validation.confidence,
+        extraction_success: validation.extractionSuccess,
+        processing_time_ms: processingTimeMs,
         prompt_version: promptVersion,
       });
       console.log("[DB] Saved invoice _id:", savedInvoice._id.toString());
@@ -171,6 +284,8 @@ app.post("/documents", upload.array("files"), async (req, res) => {
         structured: validation.validatedData,
         validation_errors: validation.errors,
         confidence: validation.confidence,
+        extraction_success: validation.extractionSuccess,
+        processing_time_ms: processingTimeMs,
       });
     }
 
@@ -275,6 +390,7 @@ app.post("/reprocess/:id", async (req, res) => {
     }
 
     const dataBuffer = fs.readFileSync(invoice.file_path);
+    const processingStartedAt = Date.now();
 
     const parser = new PDFParse({ data: dataBuffer });
     const pdfData = await parser.getText();
@@ -283,11 +399,14 @@ app.post("/reprocess/:id", async (req, res) => {
     const structuredData = result.data;
 
     const validation = validateInvoice(structuredData);
+    const processingTimeMs = Date.now() - processingStartedAt;
 
     invoice.raw_text = pdfData.text;
     invoice.structured_data = validation.validatedData;
     invoice.validation_errors = validation.errors;
     invoice.confidence = validation.confidence;
+    invoice.extraction_success = validation.extractionSuccess;
+    invoice.processing_time_ms = processingTimeMs;
     invoice.prompt_version = result.prompt_version;
 
     await invoice.save();
