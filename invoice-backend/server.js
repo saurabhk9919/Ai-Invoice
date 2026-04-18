@@ -33,6 +33,8 @@ const upload = multer({ storage });
 connectDB();
 
 async function extractInvoiceData(text) {
+  const PROMPT_VERSION = "v1";
+
   const response = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
     messages: [
@@ -76,10 +78,16 @@ ${text}
   try {
     const parsed = JSON.parse(output);
 
-    return parsed; 
+    return {
+      data: parsed,
+      prompt_version: PROMPT_VERSION,
+    };
   } catch (err) {
     console.error("JSON parse failed:", output);
-    return { error: "Invalid JSON", raw: output };
+    return {
+      data: { error: "Invalid JSON", raw: output },
+      prompt_version: PROMPT_VERSION,
+    };
   }
 }
 
@@ -136,7 +144,9 @@ app.post("/documents", upload.array("files"), async (req, res) => {
 
       const parser = new PDFParse({ data: dataBuffer });
       const pdfData = await parser.getText();
-      const structuredData = await extractInvoiceData(pdfData.text);
+      const result = await extractInvoiceData(pdfData.text);
+      const structuredData = result.data;
+      const promptVersion = result.prompt_version;
       const validation = validateInvoice(structuredData);
 
       console.log("[DB] Saving invoice:", file.filename);
@@ -147,6 +157,7 @@ app.post("/documents", upload.array("files"), async (req, res) => {
         structured_data: validation.validatedData,
         validation_errors: validation.errors,
         confidence: validation.confidence,
+        prompt_version: promptVersion,
       });
       console.log("[DB] Saved invoice _id:", savedInvoice._id.toString());
 
@@ -202,6 +213,44 @@ app.get("/documents/:id", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error fetching document" });
+  }
+});
+
+app.post("/reprocess/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const invoice = await Invoice.findById(id);
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    const dataBuffer = fs.readFileSync(invoice.file_path);
+
+    const parser = new PDFParse({ data: dataBuffer });
+    const pdfData = await parser.getText();
+
+    const result = await extractInvoiceData(pdfData.text);
+    const structuredData = result.data;
+
+    const validation = validateInvoice(structuredData);
+
+    invoice.raw_text = pdfData.text;
+    invoice.structured_data = validation.validatedData;
+    invoice.validation_errors = validation.errors;
+    invoice.confidence = validation.confidence;
+    invoice.prompt_version = result.prompt_version;
+
+    await invoice.save();
+
+    res.json({
+      message: "Reprocessed successfully",
+      data: invoice,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Reprocess failed" });
   }
 });
 

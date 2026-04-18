@@ -7,6 +7,7 @@ const invoiceSchema = new mongoose.Schema({
   raw_text: String,
 
   structured_data: Object,
+  prompt_version: String,
 
   validation_errors: [String],
   confidence: Number,

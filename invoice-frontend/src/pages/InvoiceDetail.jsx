@@ -19,11 +19,22 @@ function InvoiceDetail({ id, onBack }) {
     }
   };
 
+  const handleReprocess = async () => {
+    try {
+      await axios.post(`http://localhost:5000/reprocess/${id}`);
+      alert("Reprocessed!");
+      fetchInvoice();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   if (!invoice) return <p>Loading...</p>;
 
   return (
     <div style={{ padding: "20px" }}>
       <button onClick={onBack}>Back</button>
+      <button onClick={handleReprocess}>Reprocess</button>
 
       <h2>Invoice Detail</h2>
 
