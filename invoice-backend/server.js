@@ -216,6 +216,54 @@ app.get("/documents/:id", async (req, res) => {
   }
 });
 
+app.put("/documents/:id", async (req, res) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id);
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    const {
+      structured_data,
+      validation_errors,
+      confidence,
+      raw_text,
+      prompt_version,
+    } = req.body;
+
+    if (structured_data !== undefined) {
+      invoice.structured_data = structured_data;
+    }
+
+    if (validation_errors !== undefined) {
+      invoice.validation_errors = validation_errors;
+    }
+
+    if (confidence !== undefined) {
+      invoice.confidence = confidence;
+    }
+
+    if (raw_text !== undefined) {
+      invoice.raw_text = raw_text;
+    }
+
+    if (prompt_version !== undefined) {
+      invoice.prompt_version = prompt_version;
+    }
+
+    await invoice.save();
+
+    res.json({
+      message: "Invoice updated successfully",
+      data: invoice,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error updating document" });
+  }
+});
+
 app.post("/reprocess/:id", async (req, res) => {
   try {
     const { id } = req.params;

@@ -1,43 +1,39 @@
 import { useState } from "react";
-import axios from "axios";
+import { uploadInvoices } from "../services/api";
 
-function UploadPage() {
+function UploadPage({ onUploaded }) {
   const [files, setFiles] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [statusMessage, setStatusMessage] = useState("");
+  const [message, setMessage] = useState("");
   const [results, setResults] = useState([]);
 
-  const handleFileChange = (e) => {
-    setFiles([...e.target.files]);
-    setStatusMessage("");
+  const handleFileChange = (event) => {
+    setFiles(Array.from(event.target.files || []));
+    setMessage("");
     setResults([]);
   };
 
   const handleUpload = async () => {
     if (files.length === 0) {
-      setStatusMessage("Please select at least one PDF file before uploading.");
+      setMessage("Please choose one or more PDF files.");
       return;
     }
 
-    const formData = new FormData();
-
-    files.forEach((file) => {
-      formData.append("files", file);
-    });
-
     try {
       setIsUploading(true);
-      setStatusMessage("");
+      setMessage("Uploading and processing invoices...");
+      setResults([]);
 
-      const res = await axios.post("http://localhost:5000/documents", formData);
+      const response = await uploadInvoices(files);
+      const uploadedResults = response.results || [];
 
-      console.log(res.data);
-      setStatusMessage(res.data?.message || "Upload successful.");
-      setResults(res.data?.results || []);
+      setResults(uploadedResults);
+      setMessage(response.message || "Upload complete.");
       setFiles([]);
+      onUploaded?.();
     } catch (err) {
       console.error(err);
-      setStatusMessage("Upload failed. Please try again.");
+      setMessage("Upload failed. Please try again.");
       setResults([]);
     } finally {
       setIsUploading(false);
@@ -45,46 +41,76 @@ function UploadPage() {
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h2>Upload Invoices</h2>
+    <div className="page">
+      <div className="page-header">
+        <div>
+          <p className="eyebrow">Upload</p>
+          <h2>Upload invoices</h2>
+          <p className="page-subtitle">
+            Add one PDF or multiple PDFs to extract invoice data automatically.
+          </p>
+        </div>
+      </div>
 
-      <input
-        type="file"
-        multiple
-        accept="application/pdf"
-        onChange={handleFileChange}
-      />
+      <section className="card">
+        <div className="upload-controls">
+          <label className="file-picker">
+            <input
+              type="file"
+              accept="application/pdf"
+              multiple
+              onChange={handleFileChange}
+            />
+            <span>Select PDF files</span>
+          </label>
 
-      <br /><br />
+          <button className="button button-primary" onClick={handleUpload} disabled={isUploading}>
+            {isUploading ? "Processing..." : "Upload invoices"}
+          </button>
+        </div>
 
-      <button onClick={handleUpload} disabled={isUploading}>
-        {isUploading ? "Uploading..." : "Upload"}
-      </button>
+        <p className="helper-text">
+          {files.length > 0 ? `${files.length} file(s) selected` : "No files selected yet"}
+        </p>
 
-      {statusMessage ? <p>{statusMessage}</p> : null}
+        {message ? <p className="status-message">{message}</p> : null}
+
+        {files.length > 0 ? (
+          <div className="selected-files">
+            {files.map((file) => (
+              <div key={file.name} className="selected-file-item">
+                {file.name}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
 
       {results.length > 0 ? (
-        <div>
-          <h3>Extracted Text Preview</h3>
-          <ul>
-            {results.map((result) => (
-              <li key={result.filename}>
-                <strong>{result.filename}</strong>
-                <div>{result.text}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+        <section className="card section-card">
+          <div className="section-header">
+            <div>
+              <h3>Processing results</h3>
+              <p>Structured data returned by the extraction pipeline.</p>
+            </div>
+          </div>
 
-      <div>
-        <h3>Selected Files:</h3>
-        <ul>
-          {files.map((file, index) => (
-            <li key={index}>{file.name}</li>
-          ))}
-        </ul>
-      </div>
+          <div className="results-grid">
+            {results.map((result) => (
+              <article key={result.id || result.filename} className="result-card">
+                <div className="result-card-header">
+                  <strong>{result.filename}</strong>
+                  <span className={result.validation_errors?.length ? "badge badge-danger" : "badge badge-success"}>
+                    {result.validation_errors?.length ? "Has issues" : "Valid"}
+                  </span>
+                </div>
+                <p className="confidence-line">Confidence: {Number(result.confidence || 0).toFixed(2)}</p>
+                <pre className="json-preview">{JSON.stringify(result.structured, null, 2)}</pre>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
