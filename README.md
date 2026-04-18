@@ -210,6 +210,9 @@ POST /reprocess/:id
 
 ## 📊 Example Output JSON
 
+<img width="992" height="508" alt="image" src="https://github.com/user-attachments/assets/4d04a59e-4e94-47ab-8584-c23cb6b844bb" />
+
+
 ```json
 {
   "vendor_name": "DEMO - Sliced Invoices",
@@ -251,14 +254,6 @@ This allows:
 - Total invoices processed  
 - Average confidence score  
 - Validation failures count  
-
----
-
-## 🚧 Limitations
-
-- OCR not implemented for scanned PDFs  
-- LLM output may vary slightly  
-- Table extraction depends on PDF structure  
 
 ---
 
