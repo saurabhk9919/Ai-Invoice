@@ -6,6 +6,8 @@ const fs = require("fs");
 const { PDFParse } = require("pdf-parse");
 const Groq = require("groq-sdk");
 const path = require("path");
+const connectDB = require("./config/db");
+const Invoice = require("./models/Invoice");
 
 const app = express();
 
@@ -27,6 +29,8 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
+
+connectDB();
 
 async function extractInvoiceData(text) {
   const response = await groq.chat.completions.create({
@@ -79,6 +83,43 @@ ${text}
   }
 }
 
+function validateInvoice(data) {
+  const requiredFields = [
+    "vendor_name",
+    "invoice_number",
+    "invoice_date",
+    "currency",
+    "total_amount",
+    "tax_amount",
+    "line_items",
+  ];
+
+  const validatedData = data && typeof data === "object" ? data : {};
+  const errors = [];
+
+  if (validatedData.error) {
+    errors.push(validatedData.error);
+  }
+
+  for (const field of requiredFields) {
+    if (
+      validatedData[field] === undefined ||
+      validatedData[field] === null ||
+      validatedData[field] === ""
+    ) {
+      errors.push(`Missing field: ${field}`);
+    }
+  }
+
+  const confidence = Math.max(0, requiredFields.length - errors.length) / requiredFields.length;
+
+  return {
+    validatedData,
+    errors,
+    confidence,
+  };
+}
+
 // Upload API
 app.post("/documents", upload.array("files"), async (req, res) => {
   try {
@@ -96,19 +137,35 @@ app.post("/documents", upload.array("files"), async (req, res) => {
       const parser = new PDFParse({ data: dataBuffer });
       const pdfData = await parser.getText();
       const structuredData = await extractInvoiceData(pdfData.text);
+      const validation = validateInvoice(structuredData);
+
+      console.log("[DB] Saving invoice:", file.filename);
+      const savedInvoice = await Invoice.create({
+        filename: file.filename,
+        file_path: file.path,
+        raw_text: pdfData.text,
+        structured_data: validation.validatedData,
+        validation_errors: validation.errors,
+        confidence: validation.confidence,
+      });
+      console.log("[DB] Saved invoice _id:", savedInvoice._id.toString());
 
       console.log("Extracted Text:\n", pdfData.text);
       console.log("AI OUTPUT:\n", structuredData);
 
       results.push({
+        id: savedInvoice._id,
+        saved: true,
         filename: file.filename,
-        raw_text: pdfData.text.substring(0, 200),
-        structured: structuredData,
+        structured: validation.validatedData,
+        validation_errors: validation.errors,
+        confidence: validation.confidence,
       });
     }
 
     res.json({
-      message: "Processed",
+      message: "Processed and saved to MongoDB",
+      saved_count: results.length,
       results,
     });
   } catch (error) {
@@ -116,6 +173,35 @@ app.post("/documents", upload.array("files"), async (req, res) => {
     res.status(500).json({
       message: "Failed to process uploaded invoice PDF(s)",
     });
+  }
+});
+
+app.get("/documents", async (req, res) => {
+  try {
+    const invoices = await Invoice.find().sort({ created_at: -1 });
+
+    res.json({
+      count: invoices.length,
+      data: invoices,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error fetching documents" });
+  }
+});
+
+app.get("/documents/:id", async (req, res) => {
+  try {
+    const invoice = await Invoice.findById(req.params.id);
+
+    if (!invoice) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    res.json(invoice);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error fetching document" });
   }
 });
 
